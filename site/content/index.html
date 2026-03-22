@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Fuel Prices</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Fuel Prices</h1>
+
+        <div class="controls">
+
+            <div class="search-box">
+                <input id="cityInput" placeholder="Search city">
+                <div id="cityResults" class="results"></div>
+            </div>
+
+            <div class="search-box">
+                <input id="stationInput" placeholder="Search station" disabled>
+                <div id="stationResults" class="results"></div>
+            </div>
+
+            <select id="rangeSelect">
+                <option value="week">Last week</option>
+                <option value="month">Last month</option>
+                <option value="year">Last year</option>
+            </select>
+
+        </div>
+
+        <canvas id="priceChart"></canvas>
+    </div>
+
+    <script src="app.js"></script>
+
+</body>
+
+</html>
