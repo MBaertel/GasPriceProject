@@ -24,7 +24,7 @@ TARGET_DSN = f'dbname={TARGET_DB_DB} user={TARGET_DB_USER} password={TARGET_DB_P
 if not SOURCE_DSN or not TARGET_DSN:
     raise RuntimeError("SOURCE_DSN and TARGET_DSN must be set")
 
-BATCH_SIZE = 10_000
+BATCH_SIZE = 50_000
 
 FUEL_UUIDS = {}
 
@@ -310,6 +310,7 @@ def migrate_prices():
             src_cur.execute("""
                 SELECT stid, e5, e10, diesel, date, changed
                 FROM gas_station_information_history
+                ORDER BY date DESC
             """)
 
             print("Migrating Prices")

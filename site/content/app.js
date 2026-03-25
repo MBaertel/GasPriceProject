@@ -90,7 +90,7 @@ async function loadPrices(stationId) {
     // unique sorted timestamps
     const labels = [...new Set(prices.map(p => p.timestamp))]
         .sort()
-        .map(ts => new Date(ts).toLocaleString());
+        .map(ts => new Date(ts));
 
     // unique fuel types
     const fuelTypes = [...new Set(prices.map(p => p.fuel_type_name))];
@@ -116,14 +116,28 @@ async function loadPrices(stationId) {
 
     const ctx = document.getElementById('priceChart').getContext('2d');
 
-    chart = new Chart(ctx, {
+    const chart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels,
             datasets
         },
-        options: {
-            responsive: true
+    options: {
+        responsive: true,
+        scales: {
+            x: {
+                type: 'time',
+                time: {
+                    unit: range != 'year' ? 'day' : 'week',
+                    displayFormats: { day: 'YYYY-MM-DD' }
+                },
+                min: dates.start,
+                max: dates.end,
+                title: { display: true, text: 'Day' }
+            },
+            y: {
+                title: { display: true, text: 'Price (€)' }
+            }
         }
+    }
     });
 }
