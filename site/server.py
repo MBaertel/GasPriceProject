@@ -77,11 +77,12 @@ def search_stations(city_id: str, q: str = ""):
 
 @app.get("/prices")
 def get_prices(
-    station_id: UUID,
+    station_id: str,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     limit: int = 500
 ):
+    print("test")
     if end_time is None:
         end_time = datetime.now(timezone.utc)
 
@@ -95,7 +96,7 @@ def get_prices(
             ft.name AS fuel_type_name,
             pu.price
         FROM price_updates pu
-        JOIN fuel_type ft ON pu.fuel_type = ft.id
+        JOIN fuel_types ft ON pu.fuel_type = ft.id
         WHERE pu.timestamp >= %s
         AND pu.timestamp <= %s
         AND pu.station = %s
@@ -103,7 +104,7 @@ def get_prices(
         LIMIT %s
     """
 
-    params = [station_id, start_time, end_time, limit]
+    params = [start_time, end_time, station_id, limit]
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -112,10 +113,11 @@ def get_prices(
 
     return [
         {
-            "station_id": row[0],
-            "timestamp": row[2],
-            "fueltype_id": row[1],
-            "price": row[3]
+            "timestamp": row[0],
+            "station_id": row[1],
+            "fueltype_id": row[2],
+            "fuel_type_name": row[3],
+            "price": row[4],
         }
         for row in rows
     ]
