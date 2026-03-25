@@ -4,22 +4,28 @@ from fastapi.staticfiles import StaticFiles
 from datetime import datetime, timezone, timedelta
 import psycopg
 import os
+import dotenv
 
-DB_CONFIG = {
-    os.environ.get("DB_HOST"),
-    os.environ.get("DB_PORT"),
-    os.environ.get("DB_USER"),
-    os.environ.get("DB_PASSWORD"),
-    os.environ.get("DB_DB")
-}
+dotenv.load_dotenv()
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+content_path = os.path.join(BASE_DIR, "content")
+
+DB_HOST = os.environ.get("DB_HOST")
+DB_PORT = os.environ.get("DB_PORT")
+DB_USER = os.environ.get("DB_USER")
+DB_PASSWORD = os.environ.get("DB_PASSWORD")
+DB_DB = os.environ.get("DB_DB")
+
+DSN = f'dbname={DB_DB} user={DB_USER} password={DB_PASSWORD} host={DB_HOST} port={DB_PORT}'
 
 app = FastAPI()
 
 def get_connection():
-    return psycopg.connect(**DB_CONFIG)
+    return psycopg.connect(DSN)
 
 @app.get("/cities")
-def search_cities(query: str = ""):
+def search_cities(q: str = ""):
     query = """
         SELECT id, name
         FROM cities
@@ -29,16 +35,13 @@ def search_cities(query: str = ""):
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(query, [f"%{query}%"])
+            cur.execute(query, [f"%{q}%"])
             rows = cur.fetchall()
 
     return [
         {
             "id": row[0],
-            "name": row[1],
-            "brand": row[2],
-            "street": row[4],
-            "house_number": row[5]
+            "name": row[1]
         }
         for row in rows
     ]
@@ -46,7 +49,7 @@ def search_cities(query: str = ""):
 @app.get("/stations")
 def search_stations(city_id: str, q: str = ""):
     query = """
-        SELECT id, name, street, house_number
+        SELECT id, name, brand , street, house_number
         FROM stations
         WHERE city = %s
         AND name ILIKE %s
@@ -63,8 +66,9 @@ def search_stations(city_id: str, q: str = ""):
         {
             "id": row[0],
             "name": row[1],
-            "street": row[2],
-            "house_number": row[3]
+            "brand": row[2],
+            "street": row[3],
+            "house_number": row[4]
         }
         for row in rows
     ]
@@ -110,11 +114,11 @@ def get_prices(
         for row in rows
     ]
 
-app.mount("/",StaticFiles(directory="content",html=True),name="static")
+app.mount("/",StaticFiles(directory=content_path,html=True),name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)
 
 
 

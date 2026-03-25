@@ -1,0 +1,29 @@
+services:
+  database:
+    image: timescale/timescaledb:latest-pg16
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      - "POSTGRES_DB=fueldb"
+      - "POSTGRES_USER=admin"
+      - "POSTGRES_PASSWORD=admin"
+    ports:
+      - "6100:5432"
+    volumes:
+      - ../data/timescaledb:/var/lib/postgresql/data
+      - ./GasStationDb.sql:/docker-entrypoint-initdb.d/init.sql
+
+  server:
+    build: ../site
+    container_name: server
+    restart: unless-stopped
+    depends_on:
+      - database
+    environment:
+      - "DB_HOST=database"
+      - "DB_PORT=5432"
+      - "DB_DB=fueldb"
+      - "DB_USER=admin"
+      - "DB_PASSWORD=admin"
+    ports:
+      - "8000:8000"

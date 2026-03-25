@@ -1,6 +1,10 @@
 import psycopg
 import io
 import os
+from dotenv import load_dotenv
+import tempfile
+
+load_dotenv()
 
 SOURCE_DB_HOST = os.environ.get("SOURCE_DB_HOST")
 SOURCE_DB_PORT = os.environ.get("SOURCE_DB_PORT")
@@ -14,19 +18,15 @@ TARGET_DB_USER = os.environ.get("TARGET_DB_USER")
 TARGET_DB_PASSWORD = os.environ.get("TARGET_DB_PASSWORD")
 TARGET_DB_DB = os.environ.get("TARGET_DB_DB")
 
-SOURCE_DSN = f'dbname={SOURCE_DB_DB} user={SOURCE_DB_USER} password={SOURCE_DB_PASSWORD} host={SOURCE_DB_HOST}'
-TARGET_DSN = f'dbname={TARGET_DB_DB} user={TARGET_DB_USER} password={TARGET_DB_PASSWORD} host={TARGET_DB_HOST}'
+SOURCE_DSN = f'dbname={SOURCE_DB_DB} user={SOURCE_DB_USER} password={SOURCE_DB_PASSWORD} host={SOURCE_DB_HOST} port={SOURCE_DB_PORT}'
+TARGET_DSN = f'dbname={TARGET_DB_DB} user={TARGET_DB_USER} password={TARGET_DB_PASSWORD} host={TARGET_DB_HOST} port={TARGET_DB_PORT}'
 
 if not SOURCE_DSN or not TARGET_DSN:
     raise RuntimeError("SOURCE_DSN and TARGET_DSN must be set")
 
-BATCH_SIZE = 100_000
+BATCH_SIZE = 10_000
 
-FUEL_UUIDS = {
-    "diesel": "UUID_FOR_DIESEL",
-    "e5": "UUID_FOR_E5",
-    "e10": "UUID_FOR_E10"
-}
+FUEL_UUIDS = {}
 
 BITMASK = {
     "diesel": 1,
@@ -58,6 +58,7 @@ def get_or_create_city(conn, city_cache, city_name, postal_code):
     key = (city_name, postal_code)
 
     if key in city_cache:
+        print(f"city {city_name} already exists.")
         return city_cache[key]
 
     with conn.cursor() as cur:
@@ -71,6 +72,7 @@ def get_or_create_city(conn, city_cache, city_name, postal_code):
 
     conn.commit()
     city_cache[key] = city_id
+    print(f"created city {city_name} with id {city_id}.")
     return city_id
 
 
@@ -79,6 +81,7 @@ def get_or_create_brand(conn, brand_cache, brand_name):
         return None
 
     if brand_name in brand_cache:
+        print(f"brand {brand_name} already exists.")
         return brand_cache[brand_name]
 
     with conn.cursor() as cur:
@@ -92,7 +95,30 @@ def get_or_create_brand(conn, brand_cache, brand_name):
 
     conn.commit()
     brand_cache[brand_name] = brand_id
+    print(f"created brand {brand_name} with id {brand_id}.")
     return brand_id
+
+def get_or_create_fuels(conn):
+    fuels = ["diesel", "e5", "e10"]
+
+    with conn.cursor() as cur:
+        for fuel in fuels:
+            cur.execute("""
+                INSERT INTO fuel_types (id,name)
+                VALUES (gen_random_uuid(),%s)
+                ON CONFLICT (name) DO NOTHING
+                RETURNING id
+            """, (fuel,))
+
+        cur.execute("""
+            SELECT id, name FROM fuel_types
+            WHERE name = ANY(%s)
+        """, (fuels,))
+
+        fuel_map = {name: fuel_id for fuel_id, name in cur.fetchall()}
+
+    conn.commit()
+    return fuel_map
 
 
 # -----------------------------
@@ -145,7 +171,7 @@ def migrate_stations():
 
         with src_conn.cursor() as src_cur:
             src_cur.execute("""
-                SELECT
+                SELECT 
                     id,
                     name,
                     brand,
@@ -154,8 +180,8 @@ def migrate_stations():
                     post_code,
                     place,
                     lat,
-                    lng,
-                FROM gas_station
+                    lng
+                FROM gas_station;
             """)
 
             rows = src_cur.fetchall()
@@ -183,7 +209,7 @@ def migrate_stations():
                 name,
                 brand_id,
                 street,
-                house_number,
+                house_number or 0,
                 city_id,
                 lat,
                 lng,
@@ -191,15 +217,15 @@ def migrate_stations():
 
         with tgt_conn.cursor() as tgt_cur:
             tgt_cur.executemany("""
-                INSERT INTO gas_station (
+                INSERT INTO stations (
                     id,
                     name,
-                    brand_id,
+                    brand,
                     street,
                     house_number,
-                    city_id,
-                    lat,
-                    lng,
+                    city,
+                    latitude,
+                    longitude
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO NOTHING
@@ -234,29 +260,26 @@ def process_row(row):
 
     return rows
 
-
 def flush_price_buffer(conn):
     global price_buffer
-
     if not price_buffer:
         return
-
-    mem = io.StringIO()
-
-    for row in price_buffer:
-        mem.write(f"{row[0]}\t{row[1]}\t{row[2]}\t{row[3]}\n")
-
-    mem.seek(0)
-
-    with conn.cursor() as cur:
-        cur.copy(
-            'COPY price_updates (station, "timestamp", fuel_type, price) FROM STDIN',
-            mem
-        )
-
-    conn.commit()
+    try:
+        print("Flushing price buffer...")
+        def row_generator():
+            for station, timestamp, fuel_type, price in price_buffer:
+                if hasattr(timestamp, "tzinfo") and timestamp.tzinfo is not None:
+                    timestamp = timestamp.replace(tzinfo=None)
+                timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                yield f"{station},{timestamp_str},{fuel_type},{price}\n"
+        with conn.cursor() as cur:
+            with cur.copy('COPY price_updates (station, "timestamp", fuel_type, price) FROM STDIN WITH (FORMAT csv)') as copy:
+                for line in row_generator():
+                    copy.write(line)
+        conn.commit()
+    except Exception as e:
+        print(e)
     print(f"Inserted {len(price_buffer)} prices")
-
     price_buffer.clear()
 
 
@@ -268,13 +291,14 @@ def migrate_prices():
 
     with psycopg.connect(SOURCE_DSN) as src_conn, psycopg.connect(TARGET_DSN) as tgt_conn:
         with src_conn.cursor(name="price_cursor") as src_cur:
-            src_cur.itersize = 50_000
+            src_cur.itersize = BATCH_SIZE
 
             src_cur.execute("""
                 SELECT stid, e5, e10, diesel, date, changed
-                FROM old_prices
-                ORDER BY date
+                FROM gas_station_information_history
             """)
+
+            print("Migrating Prices")
 
             for row in src_cur:
                 price_buffer.extend(process_row(row))
@@ -291,6 +315,8 @@ def migrate_prices():
 # RUN ORDER
 # -----------------------------
 if __name__ == "__main__":
+    with psycopg.connect(TARGET_DSN) as conn:
+        FUEL_UUIDS = get_or_create_fuels(conn)
     migrate_cities()
     migrate_brands()
     migrate_stations()

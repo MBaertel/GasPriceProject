@@ -1,2 +1,4 @@
 .vscode/
 **/Lib/
+**/data/
+import/
