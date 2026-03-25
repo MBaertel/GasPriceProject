@@ -47,3 +47,7 @@ input {
 .results div:hover {
     background: #f0f0f0;
 }
+
+#priceChart {
+    max-height: 400px;
+}

@@ -99,16 +99,13 @@ async function loadPrices(stationId) {
     const datasets = fuelTypes.map(fuelType => {
         const fuelPrices = prices.filter(p => p.fuel_type_name === fuelType);
 
-        const data = labels.map(label => {
-            const match = fuelPrices.find(
-                p => new Date(p.timestamp).toLocaleString() === label
-            );
-            return match ? match.price : null;
-        });
-
         return {
             label: fuelType,
-            data
+            data: fuelPrices.map(p => ({
+                x: new Date(p.timestamp),
+                y: p.price / 1000
+            })),
+            pointRadius: 2
         };
     });
 
@@ -116,26 +113,55 @@ async function loadPrices(stationId) {
 
     const ctx = document.getElementById('priceChart').getContext('2d');
 
-    const chart = new Chart(ctx, {
+    chart = new Chart(ctx, {
         type: 'line',
         data: {
             datasets
         },
     options: {
+        maintainAspectRatio: false,
         responsive: true,
         scales: {
             x: {
                 type: 'time',
                 time: {
                     unit: range != 'year' ? 'day' : 'week',
-                    displayFormats: { day: 'YYYY-MM-DD' }
+                    displayFormats: { day: 'DD' }
                 },
                 min: dates.start,
                 max: dates.end,
                 title: { display: true, text: 'Day' }
             },
             y: {
+                min: 0,     // start from 0
+                max: 3,     // go up to 5 €
+                ticks: {stepSize:0.2},
                 title: { display: true, text: 'Price (€)' }
+            }
+        },
+        plugins: {
+            zoom: {
+                pan: {
+                    enabled: true,
+                    mode: 'xy',
+                    limits: {
+                        x: {min: dates.start,max: dates.end},
+                        y: {min: 0, max: 3}
+                    } // allow panning both axes
+                },
+                zoom: {
+                    wheel: {
+                        enabled: true, // zoom with mouse wheel
+                    },
+                    pinch: {
+                        enabled: true // zoom with pinch on touch devices
+                    },
+                    mode: 'xy',
+                    limits: {
+                        x: {min: dates.start,max: dates.end},
+                        y: {min: 0, max: 3}
+                    }  // allow zooming both axes
+                }
             }
         }
     }
