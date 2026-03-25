@@ -41,21 +41,26 @@ price_buffer = []
 # -----------------------------
 def load_city_cache(conn):
     with conn.cursor() as cur:
-        cur.execute("SELECT id, name, postal_code FROM cities")
-        return {(name, postal_code): id for id, name, postal_code in cur.fetchall()}
+        cur.execute("SELECT id, postal_code FROM cities")
+        return {(postal_code): id for id, postal_code in cur.fetchall()}
 
 
 def load_brand_cache(conn):
     with conn.cursor() as cur:
         cur.execute("SELECT id, name FROM brands")
         return {name: id for id, name in cur.fetchall()}
+    
+def load_station_cache(conn):
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM stations")
+        return {row[0] for row in cur.fetchall()}
 
 
 # -----------------------------
 # GET OR CREATE HELPERS
 # -----------------------------
 def get_or_create_city(conn, city_cache, city_name, postal_code):
-    key = (city_name, postal_code)
+    key = postal_code
 
     if key in city_cache:
         print(f"city {city_name} already exists.")
@@ -65,10 +70,15 @@ def get_or_create_city(conn, city_cache, city_name, postal_code):
         cur.execute("""
             INSERT INTO cities (id, name, postal_code)
             VALUES (gen_random_uuid(), %s, %s)
+            ON CONFLICT DO NOTHING
             RETURNING id
         """, (city_name, postal_code))
 
-        city_id = cur.fetchone()[0]
+        row = cur.fetchone()  # fetch the row
+        if row is None:
+            return
+
+        city_id = row[0]
 
     conn.commit()
     city_cache[key] = city_id
@@ -136,9 +146,12 @@ def migrate_cities():
             """)
 
             for city_name, postal_code in src_cur.fetchall():
-                get_or_create_city(tgt_conn, city_cache, city_name, postal_code)
+                get_or_create_city(tgt_conn, city_cache, normalize_city_name(city_name), postal_code)
 
     print("Cities migrated")
+
+def normalize_city_name(name: str) -> str:
+    return " ".join(word.capitalize() for word in name.split())
 
 
 # -----------------------------
@@ -243,7 +256,7 @@ def price_changed(mask, fuel):
     return (mask & BITMASK[fuel]) != 0
 
 
-def process_row(row):
+def process_row(row,station_cache):
     stid, e5, e10, diesel, dt, changed = row
 
     fuels = {
@@ -255,7 +268,7 @@ def process_row(row):
     rows = []
 
     for fuel, price in fuels.items():
-        if price is not None and price_changed(changed, fuel):
+        if price is not None and price_changed(changed, fuel) and stid in station_cache:
             rows.append((stid, dt, FUEL_UUIDS[fuel], int(price)))
 
     return rows
@@ -290,6 +303,7 @@ def migrate_prices():
     global price_buffer
 
     with psycopg.connect(SOURCE_DSN) as src_conn, psycopg.connect(TARGET_DSN) as tgt_conn:
+        station_cache = load_station_cache(tgt_conn)
         with src_conn.cursor(name="price_cursor") as src_cur:
             src_cur.itersize = BATCH_SIZE
 
@@ -301,7 +315,10 @@ def migrate_prices():
             print("Migrating Prices")
 
             for row in src_cur:
-                price_buffer.extend(process_row(row))
+                price_buffer.extend(process_row(row,station_cache))
+
+                if(len(price_buffer) % 1000 == 0):
+                    print(len(price_buffer))
 
                 if len(price_buffer) >= BATCH_SIZE:
                     flush_price_buffer(tgt_conn)

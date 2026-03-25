@@ -27,7 +27,7 @@ def get_connection():
 @app.get("/cities")
 def search_cities(q: str = ""):
     query = """
-        SELECT id, name
+        SELECT id, name, postal_code
         FROM cities
         WHERE name ILIKE %s
         ORDER BY name
@@ -41,7 +41,8 @@ def search_cities(q: str = ""):
     return [
         {
             "id": row[0],
-            "name": row[1]
+            "name": row[1],
+            "postal_code" : row[2]
         }
         for row in rows
     ]
@@ -88,12 +89,17 @@ def get_prices(
         start_time = end_time - timedelta(days=7)
 
     query = """
-        SELECT station, fuel_type, timestamp, price
-        FROM price_updates
-        WHERE station = %s
-        AND timestamp >= %s
-        AND timestamp <= %s
-        ORDER BY timestamp
+        SELECT pu.timestamp,
+            pu.station,
+            pu.fuel_type,
+            ft.name AS fuel_type_name,
+            pu.price
+        FROM price_updates pu
+        JOIN fuel_type ft ON pu.fuel_type = ft.id
+        WHERE pu.timestamp >= %s
+        AND pu.timestamp <= %s
+        AND pu.station = %s
+        ORDER BY pu.timestamp
         LIMIT %s
     """
 
@@ -107,8 +113,8 @@ def get_prices(
     return [
         {
             "station_id": row[0],
-            "timestamp": row[1],
-            "fueltype_id": row[2],
+            "timestamp": row[2],
+            "fueltype_id": row[1],
             "price": row[3]
         }
         for row in rows

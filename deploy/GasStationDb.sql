@@ -11,7 +11,7 @@ CREATE TABLE "stations" (
 CREATE TABLE "cities" (
   "id" uuid PRIMARY KEY NOT NULL,
   "postal_code" varchar(16) NOT NULL UNIQUE,
-  "name" varchar(255) NOT NULL UNIQUE
+  "name" varchar(255) NOT NULL
 );
 CREATE TABLE "brands" (
   "id" uuid PRIMARY KEY NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE "brands" (
 );
 CREATE TABLE "fuel_types" (
   "id" uuid PRIMARY KEY NOT NULL,
-  "name" varchar(32) NOT NULL UNIQUE,
+  "name" varchar(32) NOT NULL UNIQUE
 );
 CREATE TABLE "station_fuel_types" (
   "station" uuid NOT NULL,

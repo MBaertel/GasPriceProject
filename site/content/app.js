@@ -39,7 +39,7 @@ cityInput.addEventListener('input', async () => {
 
     cities.forEach(city => {
         const div = document.createElement('div');
-        div.textContent = city.name;
+        div.textContent = `${city.name} - ${city.postal_code}`;
 
         div.onclick = () => {
             cityInput.value = city.name;
@@ -87,8 +87,30 @@ async function loadPrices(stationId) {
 
     const prices = await res.json();
 
-    const labels = prices.map(p => new Date(p.timestamp).toLocaleString());
-    const values = prices.map(p => p.price);
+    // unique sorted timestamps
+    const labels = [...new Set(prices.map(p => p.timestamp))]
+        .sort()
+        .map(ts => new Date(ts).toLocaleString());
+
+    // unique fuel types
+    const fuelTypes = [...new Set(prices.map(p => p.fuel_type_name))];
+
+    // build datasets
+    const datasets = fuelTypes.map(fuelType => {
+        const fuelPrices = prices.filter(p => p.fuel_type_name === fuelType);
+
+        const data = labels.map(label => {
+            const match = fuelPrices.find(
+                p => new Date(p.timestamp).toLocaleString() === label
+            );
+            return match ? match.price : null;
+        });
+
+        return {
+            label: fuelType,
+            data
+        };
+    });
 
     if (chart) chart.destroy();
 
@@ -98,10 +120,7 @@ async function loadPrices(stationId) {
         type: 'line',
         data: {
             labels,
-            datasets: [{
-                label: 'Fuel Price',
-                data: values
-            }]
+            datasets
         },
         options: {
             responsive: true
